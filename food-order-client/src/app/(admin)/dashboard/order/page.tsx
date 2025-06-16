@@ -25,7 +25,7 @@ interface Order {
 }
 
 const ORDERS_PER_PAGE = 5;
-const STATUS_OPTIONS = ["pending", "confirm", "shipping", "received"];
+const STATUS_OPTIONS = ["Đang chờ", "Đã xác nhận", "Đang giao", "Đã nhận"];
 
 export default function AdminRecentOrdersPage() {
   const [orders, setOrders] = useState<Order[]>([]);

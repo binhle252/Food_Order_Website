@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { getCart, deleteItem, updateItem } from "@/services/cart.service";
 import jwt from "jsonwebtoken";
 import Image from "next/image";
-import styles from "../../../styles/CartPage.module.css";
+import { getUserProfile } from "@/services/account.service";
 
 interface CartItem {
   _id: string;
@@ -69,6 +69,23 @@ export default function CartPage() {
 
   useEffect(() => {
     fetchCart();
+
+    const fetchUserData = async () => {
+      try {
+        const res = await getUserProfile();
+        setCustomer(res.data.username || "");
+        setPhone(res.data.phone || "");
+        setAddress(res.data.address || "");
+      } catch (err) {
+        console.error("Không thể lấy thông tin người dùng:", err);
+      }
+    };
+
+    fetchUserData();
+  }, []);
+
+  useEffect(() => {
+    fetchCart();
   }, []);
 
   const handleDelete = async (itemId: string) => {
@@ -92,79 +109,82 @@ export default function CartPage() {
   };
 
   const handleCheckout = async () => {
-  if (!accountId || !cartItems.length || !cartId) return;
+    if (!accountId || !cartItems.length || !cartId) return;
 
-  if (!customer || !phone || !address) {
-    setMessage("Vui lòng điền đầy đủ thông tin giao hàng.");
-    return;
-  }
+    if (!customer || !phone || !address) {
+      setMessage("Vui lòng điền đầy đủ thông tin giao hàng.");
+      return;
+    }
 
-  const isValidPhoneNumber = (phone: string): boolean => {
-    const regex = /^(0[3|5|7|8|9])[0-9]{8}$/;
-    return regex.test(phone);
+    const isValidPhoneNumber = (phone: string): boolean => {
+      const regex = /^(0[3|5|7|8|9])[0-9]{8}$/;
+      return regex.test(phone);
+    };
+
+    if (!isValidPhoneNumber(phone)) {
+      setMessage(
+        "Số điện thoại không hợp lệ. Vui lòng nhập đúng 10 số và bắt đầu bằng 03, 05, 07, 08 hoặc 09."
+      );
+      return;
+    }
+
+    if (paymentMethod === "Online") {
+      try {
+        const response = await fetch(
+          "http://localhost:5000/api/momo/create_momo_payment",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              amount: totalPrice,
+              orderInfo: "Thanh toán đơn hàng food app qua MoMo",
+              customer,
+              phone,
+              address,
+              cart_id: cartId,
+            }),
+          }
+        );
+        const data = await response.json();
+        if (response.ok && data.payUrl) {
+          window.location.href = data.payUrl;
+        } else {
+          setMessage(data.message || "Không thể tạo thanh toán qua MoMo.");
+        }
+      } catch (err) {
+        console.error(err);
+        setMessage("Lỗi khi tạo thanh toán MoMo.");
+      }
+    } else {
+      try {
+        const response = await fetch("http://localhost:5000/api/order", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            customer,
+            phone,
+            address,
+            payment_method: paymentMethod,
+            total_money: totalPrice,
+            cart_id: cartId,
+          }),
+        });
+        const data = await response.json();
+        if (response.ok) {
+          setMessage("✅ Đặt hàng thành công!");
+          setCartItems([]);
+          setCustomer("");
+          setPhone("");
+          setAddress("");
+        } else {
+          setMessage(data.message || "Lỗi khi đặt hàng.");
+        }
+      } catch (error) {
+        console.error("Lỗi khi đặt hàng:", error);
+        setMessage("Đã xảy ra lỗi khi đặt hàng.");
+      }
+    }
   };
-
-  if (!isValidPhoneNumber(phone)) {
-    setMessage("Số điện thoại không hợp lệ. Vui lòng nhập đúng 10 số và bắt đầu bằng 03, 05, 07, 08 hoặc 09.");
-    return;
-  }
-
-  if (paymentMethod === "Online") {
-    try {
-      const response = await fetch("http://localhost:5000/api/momo/create_momo_payment", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: totalPrice,
-          orderInfo: "Thanh toán đơn hàng food app qua MoMo",
-          customer,
-          phone,
-          address,
-          cart_id: cartId,
-        }),
-      });
-      const data = await response.json();
-      if (response.ok && data.payUrl) {
-        window.location.href = data.payUrl;
-      } else {
-        setMessage(data.message || "Không thể tạo thanh toán qua MoMo.");
-      }
-    } catch (err) {
-      console.error(err);
-      setMessage("Lỗi khi tạo thanh toán MoMo.");
-    }
-  } else {
-    try {
-      const response = await fetch("http://localhost:5000/api/order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          customer,
-          phone,
-          address,
-          payment_method: paymentMethod,
-          total_money: totalPrice,
-          cart_id: cartId,
-        }),
-      });
-      const data = await response.json();
-      if (response.ok) {
-        setMessage("✅ Đặt hàng thành công!");
-        setCartItems([]);
-        setCustomer("");
-        setPhone("");
-        setAddress("");
-      } else {
-        setMessage(data.message || "Lỗi khi đặt hàng.");
-      }
-    } catch (error) {
-      console.error("Lỗi khi đặt hàng:", error);
-      setMessage("Đã xảy ra lỗi khi đặt hàng.");
-    }
-  }
-};
-
-
 
   const totalPrice = cartItems.reduce(
     (sum, item) => sum + item.food.price * item.quantity,
@@ -254,7 +274,9 @@ export default function CartPage() {
               className="w-full border px-3 py-2 rounded"
             >
               <option value="On delivery">Thanh toán khi nhận hàng</option>
-              <option value="Online">Thanh toán online (Thanh toán qua Momo)</option>
+              <option value="Online">
+                Thanh toán online (Thanh toán qua Momo)
+              </option>
             </select>
           </div>
           {message && <p className="text-red-500 mb-4">{message}</p>}
